@@ -8,6 +8,7 @@
 #include <array>
 #include <vector>
 #include <algorithm>
+#include <iomanip>
 #include "logger.h"
 
 
@@ -18,7 +19,7 @@ std::string hex(const void* ptr, size_t len) {
   std::stringstream sstream;
   sstream << "{ " << std::hex;
   for (size_t i{}; i < len; ++i) {
-    sstream << "0x" << (int) ((const uint8_t*) ptr)[i] << " ";
+    sstream << std::setfill('0') << std::setw(2) << (int) ((const uint8_t*) ptr)[i] << " ";
   }
   sstream << "} " << std::dec << len << "s";
   return sstream.str();
@@ -47,7 +48,7 @@ struct stream_t {
 
   stream_t(const std::string& buf = std::string()) : _buf(buf), _pos(0) { }
 
-  bool empty() { return _pos == _buf.size(); }
+  bool empty() { return _pos + 1 == _buf.size(); }
 
   void read_data(void* ptr, size_t len, bool peak = false) {
     if (_pos + len <= _buf.size()) {
@@ -66,19 +67,18 @@ struct stream_t {
   }
 
   void skip(size_t len) {
-    LOGGER_SNI;
+    // LOGGER_SNI;
     if (_pos + len <= _buf.size()) {
-      LOG_SNI("skip: '%s' ", hex(_buf.c_str() + _pos, len).c_str());
+      // LOG_SNI("skip: '%s' ", hex(_buf.c_str() + _pos, len).c_str());
       _pos += len;
     } else {
       throw std::runtime_error("empty flow");
     }
   }
 
-  template <typename T, typename std::enable_if<std::is_arithmetic<T>::value>::type* = nullptr>
+  template <typename T, typename std::enable_if<std::is_pod<T>::value>::type* = nullptr>
   void read(T& value, bool peak = false) {
     read_data(&value, sizeof(T), peak);
-    ntoh(value);
   }
 
   template <typename T, typename std::enable_if<std::is_same<T, std::string>::value>::type* = nullptr>
@@ -90,11 +90,9 @@ struct stream_t {
     read_data(value.data(), value.size(), peak);
   }
 
-  template <typename T, typename std::enable_if<std::is_arithmetic<T>::value>::type* = nullptr>
+  template <typename T, typename std::enable_if<std::is_pod<T>::value>::type* = nullptr>
   void write(T& value) {
-    ntoh(value);
     write_data(&value, sizeof(T));
-    ntoh(value);
   }
 
   template <typename T, typename std::enable_if<std::is_same<T, std::string>::value>::type* = nullptr>
@@ -107,19 +105,31 @@ struct stream_t {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-struct file_aiff_t {
-  // NAME
-  std::string _name;
+struct file_wav_t {
 
-  // COMM
-  uint16_t _num_channels;
-  uint32_t _num_sample_frames;
-  uint16_t _sample_size;
-  std::array<uint8_t, 10> _sample_rate;
+  struct riff_hdr_t {
+    uint32_t id;
+    uint32_t size;
+    uint32_t format;
+  } __attribute__((packed));
 
-  // SSND
-  uint32_t _offset;
-  uint32_t _block_size;
+  struct fmt_hdr_t {
+    uint32_t id;
+    uint32_t size;
+    uint16_t audio_format;
+    uint16_t num_channels;
+    uint32_t sample_rate;
+    uint32_t byte_rate;
+    uint16_t block_align;
+    uint16_t bits_per_sample;
+  } __attribute__((packed));
+
+  struct data_hdr_t {
+    uint32_t id;
+    uint32_t size;
+  } __attribute__((packed));
+
+  fmt_hdr_t fmt_hdr;
   std::vector<std::vector<uint32_t>> _frames;
 
   void read(const std::string& fname) {
@@ -129,97 +139,89 @@ struct file_aiff_t {
     std::string buf((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
     stream_t stream(buf);
 
-    uint32_t id;
-    stream.read(id);
-    LOG_SNI("id: '0x%x' '%.*s' ", id, sizeof(id), &id);
-    if (id != 0x464f524d) { // "FORM"
-      LOG_SNI("ERROR: invalid id");
-      return;
+    {
+      riff_hdr_t riff_hdr;
+      stream.read(riff_hdr);
+      LOG_SNI("id:     '0x%x' '%.*s' ", riff_hdr.id, sizeof(riff_hdr.id), &riff_hdr.id);
+      LOG_SNI("size:   '0x%x' '%d' ", riff_hdr.size, riff_hdr.size);
+      LOG_SNI("format: '0x%x' '%.*s' ", riff_hdr.format, sizeof(riff_hdr.format), &riff_hdr.format);
+
+      if (riff_hdr.id != 0x46464952) { // "RIFF" little-endian
+        LOG_SNI("ERROR: invalid id");
+        return;
+      }
+
+      if (riff_hdr.format != 0x45564157) { // "WAVE" little-endian
+        LOG_SNI("ERROR: invalid format");
+        return;
+      }
     }
 
-    uint32_t size;
-    stream.read(size);
-    LOG_SNI("size: '0x%x' '%d' ", size, size);
+    {
+      stream.read(fmt_hdr);
+      LOG_SNI("id:              '0x%x' '%.*s' ", fmt_hdr.id, sizeof(fmt_hdr.id), &fmt_hdr.id);
+      LOG_SNI("size:            '0x%x' '%d' ", fmt_hdr.size, fmt_hdr.size);
+      LOG_SNI("audio_format:    '0x%x' '%d' ", fmt_hdr.audio_format, fmt_hdr.audio_format);
+      LOG_SNI("num_channels:    '0x%x' '%d' ", fmt_hdr.num_channels, fmt_hdr.num_channels);
+      LOG_SNI("sample_rate:     '0x%x' '%d' ", fmt_hdr.sample_rate, fmt_hdr.sample_rate);
+      LOG_SNI("byte_rate:       '0x%x' '%d' ", fmt_hdr.byte_rate, fmt_hdr.byte_rate);
+      LOG_SNI("block_align:     '0x%x' '%d' ", fmt_hdr.block_align, fmt_hdr.block_align);
+      LOG_SNI("bits_per_sample: '0x%x' '%d' ", fmt_hdr.bits_per_sample, fmt_hdr.bits_per_sample);
 
-    uint32_t form_type;
-    stream.read(form_type);
-    LOG_SNI("form_type: '0x%x' '%.*s' ", form_type, sizeof(form_type), &form_type);
-    if (form_type != 0x41494646) { // "AIFF"
-      LOG_SNI("ERROR: invalid form_type");
-      return;
+      if (fmt_hdr.id != 0x20746d66) { // "fmt " little-endian
+        LOG_SNI("ERROR: invalid id");
+        return;
+      }
+
+      if (fmt_hdr.size != 16) { // 16 for PCM
+        LOG_SNI("ERROR: invalid size");
+        return;
+      }
+
+      if (fmt_hdr.audio_format != 1) { // 1 for PCM
+        LOG_SNI("ERROR: invalid size");
+        return;
+      }
+    }
+
+    {
+      data_hdr_t data_hdr;
+      stream.read(data_hdr);
+      LOG_SNI("id:   '0x%x' '%.*s' ", data_hdr.id, sizeof(data_hdr.id), &data_hdr.id);
+      LOG_SNI("size: '0x%x' '%d' ", data_hdr.size, data_hdr.size);
+
+      if (data_hdr.id != 0x61746164) { // "data " little-endian
+        LOG_SNI("ERROR: invalid id");
+        return;
+      }
+
+      size_t frames_per_channel = data_hdr.size / fmt_hdr.block_align;
+      LOG_SNI("frames_per_channel %zd", frames_per_channel);
+      _frames.resize(fmt_hdr.num_channels);
+      for (auto& frames_ch : _frames) {
+        frames_ch.resize(frames_per_channel);
+      }
+
+      for (size_t i = 0; i < frames_per_channel; ++i) {
+        for (size_t j = 0; j < fmt_hdr.num_channels; ++j) {
+          uint8_t tmp;
+          uint32_t frame = 0;
+          for (size_t k = 0; k < fmt_hdr.bits_per_sample / 8; ++k) {
+            stream.read(tmp);
+            frame |= tmp << 8 * k;
+          }
+          _frames[j][i] = frame;
+        }
+      }
+
     }
 
     while (!stream.empty()) {
-      uint32_t id;
-      stream.read(id);
-      LOG_SNI("id: '0x%x' '%.*s' ", id, sizeof(id), &id);
-
-      switch (id) {
-        case 0x4e414d45: { // NAME
-          stream.read(_name);
-          LOG_SNI("name: '%s' ", _name.c_str());
-          break;
-        }
-        case 0x434f4d4d: { // COMM
-          uint32_t size;
-          stream.read(size);
-          LOG_SNI("size: '0x%x' '%d' ", size, size);
-
-          stream.read(_num_channels);
-          LOG_SNI("num_channels: '0x%x' '%d' ", _num_channels, _num_channels);
-
-          stream.read(_num_sample_frames);
-          LOG_SNI("num_sample_frames: '0x%x' '%d' ", _num_sample_frames, _num_sample_frames);
-
-          stream.read(_sample_size);
-          LOG_SNI("sample_size: '0x%x' '%d' ", _sample_size, _sample_size);
-
-          stream.read_data(_sample_rate.data(), _sample_rate.size());
-          break;
-        }
-        case 0x53534e44: { // SSND
-          uint32_t size;
-          stream.read(size);
-          LOG_SNI("size: '0x%x' '%d' ", size, size);
-
-          stream.read(_offset);
-          LOG_SNI("offset: '0x%x' '%d' ", _offset, _offset);
-
-          stream.read(_block_size);
-          LOG_SNI("block_size: '0x%x' '%d' ", _block_size, _block_size);
-
-          _frames.resize(_num_channels);
-          for (size_t j = 0; j < _num_channels; ++j) {
-            _frames[j].resize(_num_sample_frames);
-          }
-
-          for (size_t i = 0; i < _num_sample_frames; ++i) {
-            for (size_t j = 0; j < _num_channels; ++j) {
-              if (_sample_size <= 8) {
-                uint8_t frame;
-                stream.read(frame);
-                _frames[j][i] = frame;
-              } else if (_sample_size <= 16) {
-                uint16_t frame;
-                stream.read(frame);
-                _frames[j][i] = frame;
-              } else if (_sample_size <= 24) {
-                stream.skip(3);
-                LOG_SNI("ERROR: _sample_size == 24");
-              } else if (_sample_size <= 32) {
-                uint32_t frame;
-                stream.read(frame);
-                _frames[j][i] = frame;
-              }
-            }
-          }
-          break;
-        }
-        default: {
-          LOG_SNI("ERROR: unknown id");
-          return;
-        }
-      }
+      data_hdr_t data_hdr;
+      stream.read(data_hdr);
+      LOG_SNI("id:   '0x%x' '%.*s' ", data_hdr.id, sizeof(data_hdr.id), &data_hdr.id);
+      LOG_SNI("size: '0x%x' '%d' ", data_hdr.size, data_hdr.size);
+      stream.skip(data_hdr.size);
     }
   }
 
@@ -230,58 +232,34 @@ struct file_aiff_t {
 
     // prewrite
 
-    uint32_t name_id = 0x4e414d45;
-    uint32_t name_size_hidden = sizeof(uint32_t) + _name.size();
+    data_hdr_t data_hdr = {
+      .id = 0x61746164,
+      .size = fmt_hdr.block_align * _frames[0].size(),
+    };
 
-    uint32_t comm_id = 0x434f4d4d;
-    uint32_t comm_size = sizeof(_num_channels) + sizeof(_num_sample_frames)
-      + sizeof(_sample_size) + sizeof(_sample_rate);
-
-    uint32_t ssnd_id = 0x53534e44;
-    uint32_t ssnd_size = sizeof(_offset) + sizeof(_block_size)
-      + _num_sample_frames * _num_channels * ((_sample_size + 7) / 8);
-
-    uint32_t hdr_id = 0x464f524d;
-    uint32_t hdr_size = sizeof(uint32_t/*form_type*/) + sizeof(uint32_t) + name_size_hidden
-      + 2 * sizeof(uint32_t) + comm_size + 2 * sizeof(uint32_t) + ssnd_size;
-    uint32_t hdr_form_type = 0x41494646;
+    riff_hdr_t riff_hdr = {
+      .id = 0x46464952,
+      .size = 2 * sizeof(uint32_t) + riff_hdr.size
+          + 2 * sizeof(uint32_t) + fmt_hdr.size
+          + 2 * sizeof(uint32_t) + data_hdr.size,
+      .format = 0x45564157,
+    };
 
     // write
 
-    stream.write(hdr_id);
-    stream.write(hdr_size);
-    stream.write(hdr_form_type);
+    stream.write(riff_hdr);
+    stream.write(fmt_hdr);
+    stream.write(data_hdr);
 
-    stream.write(name_id);
-    stream.write(_name);
-
-    stream.write(comm_id);
-    stream.write(comm_size);
-    stream.write(_num_channels);
-    stream.write(_num_sample_frames);
-    stream.write(_sample_size);
-    stream.write_data(_sample_rate.data(), _sample_rate.size());
-
-    stream.write(ssnd_id);
-    stream.write(ssnd_size);
-    stream.write(_offset);
-    stream.write(_block_size);
-
-    for (size_t i = 0; i < _num_sample_frames; ++i) {
-      for (size_t j = 0; j < _num_channels; ++j) {
-        if (_sample_size <= 8) {
-          uint8_t frame = _frames[j][i];
-          stream.write(frame);
-        } else if (_sample_size <= 16) {
-          uint16_t frame = _frames[j][i];
-          stream.write(frame);
-        } else if (_sample_size <= 24) {
-          LOG_SNI("ERROR: _sample_size == 24");
-        } else if (_sample_size <= 32) {
+    {
+      for (size_t i = 0; i < _frames[0].size(); ++i) {
+        for (size_t j = 0; j < fmt_hdr.num_channels; ++j) {
+          uint8_t tmp;
           uint32_t frame = _frames[j][i];
-          stream.write(frame);
-        } else {
-          LOG_SNI("ERROR: _sample_size >= 32");
+          for (size_t k = 0; k < fmt_hdr.bits_per_sample / 8; ++k) {
+            tmp = (frame >> 8 * k) & 0xFF;
+            stream.write(tmp);
+          }
         }
       }
     }
@@ -300,19 +278,18 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  file_aiff_t aiff;
-  aiff.read(argv[1]);
+  file_wav_t wav;
+  wav.read(argv[1]);
   {
-    auto& v = aiff._frames[0];
-    std::random_shuffle(v.begin(), v.end());
-    for (size_t i = 0; i < aiff._frames[0].size(); ++i) {
-      uint32_t& a = aiff._frames[0][i];
-      uint32_t& b = aiff._frames[1][i];
-      b = a;
+    auto& v = wav._frames[0];
+    for (size_t i = 0; i < wav._frames[0].size(); ++i) {
+      uint32_t& a = wav._frames[0][i];
+      uint32_t& b = wav._frames[1][i];
+      // b = a;
       // printf("%8x, %8x, %8x \n", i, a, b);
     }
   }
-  aiff.write(argv[2]);
+  wav.write(argv[2]);
 
   return 0;
 }

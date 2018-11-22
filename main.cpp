@@ -48,7 +48,8 @@ struct stream_t {
 
   stream_t(const std::string& buf = std::string()) : _buf(buf), _pos(0) { }
 
-  bool empty() { return _pos + 1 == _buf.size(); }
+  size_t size() { return _buf.size() - _pos; }
+  bool empty() { return size() == 0; }
 
   void read_data(void* ptr, size_t len, bool peak = false) {
     if (_pos + len <= _buf.size()) {
@@ -57,6 +58,7 @@ struct stream_t {
         _pos += len;
       // LOG_SNI("read: '%s' ", hex(ptr, len).c_str());
     } else {
+      LOG_SNI("ERROR: '%zd' / '%zd' ", len, size());
       throw std::runtime_error("empty flow");
     }
   }
@@ -72,6 +74,7 @@ struct stream_t {
       // LOG_SNI("skip: '%s' ", hex(_buf.c_str() + _pos, len).c_str());
       _pos += len;
     } else {
+      LOG_SNI("ERROR: '%zd' / '%zd' ", len, size());
       throw std::runtime_error("empty flow");
     }
   }
@@ -105,6 +108,11 @@ struct stream_t {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// TODO
+// Размер блока должен быть четным.
+
+////////////////////////////////////////////////////////////////////////////////
+
 struct file_wav_t {
 
   struct riff_hdr_t {
@@ -129,8 +137,12 @@ struct file_wav_t {
     uint32_t size;
   } __attribute__((packed));
 
-  fmt_hdr_t fmt_hdr;
-  std::vector<std::vector<uint32_t>> _frames;
+  struct channel_t {
+    uint32_t sample_rate;
+    std::vector<uint32_t> frames;
+  };
+
+  std::vector<channel_t> channels;
 
   void read(const std::string& fname) {
     LOGGER_SNI;
@@ -157,6 +169,7 @@ struct file_wav_t {
       }
     }
 
+    fmt_hdr_t fmt_hdr;
     {
       stream.read(fmt_hdr);
       LOG_SNI("id:              '0x%x' '%.*s' ", fmt_hdr.id, sizeof(fmt_hdr.id), &fmt_hdr.id);
@@ -182,6 +195,11 @@ struct file_wav_t {
         LOG_SNI("ERROR: invalid size");
         return;
       }
+
+      channels.resize(fmt_hdr.num_channels);
+      for (auto& channel : channels) {
+        channel.sample_rate = fmt_hdr.sample_rate;
+      }
     }
 
     {
@@ -195,33 +213,36 @@ struct file_wav_t {
         return;
       }
 
-      size_t frames_per_channel = data_hdr.size / fmt_hdr.block_align;
-      LOG_SNI("frames_per_channel %zd", frames_per_channel);
-      _frames.resize(fmt_hdr.num_channels);
-      for (auto& frames_ch : _frames) {
-        frames_ch.resize(frames_per_channel);
+      if (data_hdr.size > stream.size()) {
+        LOG_SNI("stream.size:   '0x%x' '%d' ", stream.size(), stream.size());
+        LOG_SNI("data_hdr.size: '0x%x' '%d' ", data_hdr.size, data_hdr.size);
+        LOG_SNI("ERROR: broken data");
+        data_hdr.size = stream.size();
       }
 
+      size_t frames_per_channel = data_hdr.size / fmt_hdr.block_align;
+      LOG_SNI("frames_per_channel %zd", frames_per_channel);
+
       for (size_t i = 0; i < frames_per_channel; ++i) {
-        for (size_t j = 0; j < fmt_hdr.num_channels; ++j) {
-          uint8_t tmp;
+        for (auto& channel : channels) {
+          uint8_t tmp = 0;
           uint32_t frame = 0;
           for (size_t k = 0; k < fmt_hdr.bits_per_sample / 8; ++k) {
             stream.read(tmp);
             frame |= tmp << 8 * k;
           }
-          _frames[j][i] = frame;
+          for (size_t k = fmt_hdr.bits_per_sample / 8; k < 32 / 8; ++k) {
+            frame |= tmp << 8 * k;
+          }
+          channel.frames.push_back(frame);
         }
       }
 
     }
 
-    while (!stream.empty()) {
-      data_hdr_t data_hdr;
-      stream.read(data_hdr);
-      LOG_SNI("id:   '0x%x' '%.*s' ", data_hdr.id, sizeof(data_hdr.id), &data_hdr.id);
-      LOG_SNI("size: '0x%x' '%d' ", data_hdr.size, data_hdr.size);
-      stream.skip(data_hdr.size);
+    if (!stream.empty()) {
+      LOG_SNI("ERROR: stream is not empty '%zd' ", stream.size());
+      stream.skip(stream.size());
     }
   }
 
@@ -232,16 +253,29 @@ struct file_wav_t {
 
     // prewrite
 
+    uint8_t bits_per_sample = 32;
+
     data_hdr_t data_hdr = {
       .id = 0x61746164,
-      .size = fmt_hdr.block_align * _frames[0].size(),
+      .size = uint32_t(channels.size() * bits_per_sample / 8 * channels[0].frames.size()),
+    };
+
+    fmt_hdr_t fmt_hdr = {
+      .id = 0x20746d66,
+      .size = 16,
+      .audio_format = 1,
+      .num_channels = (uint16_t) channels.size(),
+      .sample_rate = channels[0].sample_rate,
+      .byte_rate = fmt_hdr.sample_rate * fmt_hdr.num_channels * bits_per_sample / 8,
+      .block_align = uint16_t(fmt_hdr.num_channels * bits_per_sample / 8),
+      .bits_per_sample = bits_per_sample,
     };
 
     riff_hdr_t riff_hdr = {
       .id = 0x46464952,
-      .size = 2 * sizeof(uint32_t) + riff_hdr.size
+      .size = uint32_t(2 * sizeof(uint32_t) - 4 // XXX
           + 2 * sizeof(uint32_t) + fmt_hdr.size
-          + 2 * sizeof(uint32_t) + data_hdr.size,
+          + 2 * sizeof(uint32_t) + data_hdr.size),
       .format = 0x45564157,
     };
 
@@ -252,10 +286,10 @@ struct file_wav_t {
     stream.write(data_hdr);
 
     {
-      for (size_t i = 0; i < _frames[0].size(); ++i) {
-        for (size_t j = 0; j < fmt_hdr.num_channels; ++j) {
-          uint8_t tmp;
-          uint32_t frame = _frames[j][i];
+      for (size_t i = 0; i < channels[0].frames.size(); ++i) {
+        for (auto& channel : channels) {
+          uint8_t tmp = 0;
+          uint32_t frame = channel.frames[i];
           for (size_t k = 0; k < fmt_hdr.bits_per_sample / 8; ++k) {
             tmp = (frame >> 8 * k) & 0xFF;
             stream.write(tmp);
@@ -281,10 +315,10 @@ int main(int argc, char* argv[]) {
   file_wav_t wav;
   wav.read(argv[1]);
   {
-    auto& v = wav._frames[0];
-    for (size_t i = 0; i < wav._frames[0].size(); ++i) {
-      uint32_t& a = wav._frames[0][i];
-      uint32_t& b = wav._frames[1][i];
+    // auto& v = wav.channels[0];
+    for (size_t i = 0; i < wav.channels.size(); ++i) {
+      // uint32_t& a = wav.channels[0].frames[i];
+      // uint32_t& b = wav.channels[1].frames[i];
       // b = a;
       // printf("%8x, %8x, %8x \n", i, a, b);
     }

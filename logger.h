@@ -7,8 +7,8 @@
 #define LOGGER(name, indent)       Logger logger(indent, name, __FILE__, __PRETTY_FUNCTION__, __LINE__)
 #define LOG(name, indent, ...)     Logger::log(name, indent, __LINE__, __VA_ARGS__)
 
-#define LOGGER_SNI                 LOGGER("sni  ", LoggerIndentSniffer::indent)
-#define LOG_SNI(...)               LOG("sni  ", LoggerIndentSniffer::indent, __VA_ARGS__)
+#define LOGGER_MUS                 LOGGER("mus  ", LoggerIndentMusic::indent)
+#define LOG_MUS(...)               LOG("mus  ", LoggerIndentMusic::indent, __VA_ARGS__)
 
 #define LOGGER_TEST                LOGGER("test ", LoggerIndentTest::indent)
 #define LOG_TEST(...)              LOG("test ", LoggerIndentTest::indent, __VA_ARGS__)
@@ -20,7 +20,7 @@ struct LoggerIndent {
   static inline int indent;
 };
 
-struct LoggerIndentSniffer : LoggerIndent<LoggerIndentSniffer> { };
+struct LoggerIndentMusic   : LoggerIndent<LoggerIndentMusic> { };
 struct LoggerIndentTest    : LoggerIndent<LoggerIndentTest> { };
 
 

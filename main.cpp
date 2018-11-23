@@ -58,25 +58,24 @@ struct stream_t {
       memcpy(ptr, _buf.c_str() + _pos, len);
       if (!peak)
         _pos += len;
-      // LOG_SNI("read: '%s' ", hex(ptr, len).c_str());
+      // LOG_MUS("read: '%s' ", hex(ptr, len).c_str());
     } else {
-      LOG_SNI("ERROR: '%zd' / '%zd' ", len, size());
+      LOG_MUS("ERROR: '%zd' / '%zd' ", len, size());
       throw std::runtime_error("empty flow");
     }
   }
 
   void write_data(void* ptr, size_t len) {
     _buf.append((char*) ptr, len);
-    // LOG_SNI("write: '%s' ", hex(ptr, len).c_str());
+    // LOG_MUS("write: '%s' ", hex(ptr, len).c_str());
   }
 
   void skip(size_t len) {
-    // LOGGER_SNI;
     if (_pos + len <= _buf.size()) {
-      // LOG_SNI("skip: '%s' ", hex(_buf.c_str() + _pos, len).c_str());
+      // LOG_MUS("skip: '%s' ", hex(_buf.c_str() + _pos, len).c_str());
       _pos += len;
     } else {
-      LOG_SNI("ERROR: '%zd' / '%zd' ", len, size());
+      LOG_MUS("ERROR: '%zd' / '%zd' ", len, size());
       throw std::runtime_error("empty flow");
     }
   }
@@ -143,7 +142,7 @@ struct file_wav_t {
   uint32_t sample_rate;
 
   void read(const std::string& fname) {
-    LOGGER_SNI;
+    LOGGER_MUS;
 
     std::ifstream t(fname);
     std::string buf((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
@@ -152,17 +151,17 @@ struct file_wav_t {
     {
       riff_hdr_t riff_hdr;
       stream.read(riff_hdr);
-      LOG_SNI("id:     '0x%x' '%.*s' ", riff_hdr.id, sizeof(riff_hdr.id), &riff_hdr.id);
-      LOG_SNI("size:   '0x%x' '%d' ", riff_hdr.size, riff_hdr.size);
-      LOG_SNI("format: '0x%x' '%.*s' ", riff_hdr.format, sizeof(riff_hdr.format), &riff_hdr.format);
+      LOG_MUS("id:     '0x%x' '%.*s' ", riff_hdr.id, sizeof(riff_hdr.id), &riff_hdr.id);
+      LOG_MUS("size:   '0x%x' '%d' ", riff_hdr.size, riff_hdr.size);
+      LOG_MUS("format: '0x%x' '%.*s' ", riff_hdr.format, sizeof(riff_hdr.format), &riff_hdr.format);
 
       if (riff_hdr.id != 0x46464952) { // "RIFF" little-endian
-        LOG_SNI("ERROR: invalid id");
+        LOG_MUS("ERROR: invalid id");
         return;
       }
 
       if (riff_hdr.format != 0x45564157) { // "WAVE" little-endian
-        LOG_SNI("ERROR: invalid format");
+        LOG_MUS("ERROR: invalid format");
         return;
       }
     }
@@ -170,27 +169,27 @@ struct file_wav_t {
     fmt_hdr_t fmt_hdr;
     {
       stream.read(fmt_hdr);
-      LOG_SNI("id:              '0x%x' '%.*s' ", fmt_hdr.id, sizeof(fmt_hdr.id), &fmt_hdr.id);
-      LOG_SNI("size:            '0x%x' '%d' ", fmt_hdr.size, fmt_hdr.size);
-      LOG_SNI("audio_format:    '0x%x' '%d' ", fmt_hdr.audio_format, fmt_hdr.audio_format);
-      LOG_SNI("num_channels:    '0x%x' '%d' ", fmt_hdr.num_channels, fmt_hdr.num_channels);
-      LOG_SNI("sample_rate:     '0x%x' '%d' ", fmt_hdr.sample_rate, fmt_hdr.sample_rate);
-      LOG_SNI("byte_rate:       '0x%x' '%d' ", fmt_hdr.byte_rate, fmt_hdr.byte_rate);
-      LOG_SNI("block_align:     '0x%x' '%d' ", fmt_hdr.block_align, fmt_hdr.block_align);
-      LOG_SNI("bits_per_sample: '0x%x' '%d' ", fmt_hdr.bits_per_sample, fmt_hdr.bits_per_sample);
+      LOG_MUS("id:              '0x%x' '%.*s' ", fmt_hdr.id, sizeof(fmt_hdr.id), &fmt_hdr.id);
+      LOG_MUS("size:            '0x%x' '%d' ", fmt_hdr.size, fmt_hdr.size);
+      LOG_MUS("audio_format:    '0x%x' '%d' ", fmt_hdr.audio_format, fmt_hdr.audio_format);
+      LOG_MUS("num_channels:    '0x%x' '%d' ", fmt_hdr.num_channels, fmt_hdr.num_channels);
+      LOG_MUS("sample_rate:     '0x%x' '%d' ", fmt_hdr.sample_rate, fmt_hdr.sample_rate);
+      LOG_MUS("byte_rate:       '0x%x' '%d' ", fmt_hdr.byte_rate, fmt_hdr.byte_rate);
+      LOG_MUS("block_align:     '0x%x' '%d' ", fmt_hdr.block_align, fmt_hdr.block_align);
+      LOG_MUS("bits_per_sample: '0x%x' '%d' ", fmt_hdr.bits_per_sample, fmt_hdr.bits_per_sample);
 
       if (fmt_hdr.id != 0x20746d66) { // "fmt " little-endian
-        LOG_SNI("ERROR: invalid id");
+        LOG_MUS("ERROR: invalid id");
         return;
       }
 
       if (fmt_hdr.size != 16) { // 16 for PCM
-        LOG_SNI("ERROR: invalid size");
+        LOG_MUS("ERROR: invalid size");
         return;
       }
 
       if (fmt_hdr.audio_format != 1) { // 1 for PCM
-        LOG_SNI("ERROR: invalid size");
+        LOG_MUS("ERROR: invalid size");
         return;
       }
 
@@ -201,23 +200,23 @@ struct file_wav_t {
     {
       data_hdr_t data_hdr;
       stream.read(data_hdr);
-      LOG_SNI("id:   '0x%x' '%.*s' ", data_hdr.id, sizeof(data_hdr.id), &data_hdr.id);
-      LOG_SNI("size: '0x%x' '%d' ", data_hdr.size, data_hdr.size);
+      LOG_MUS("id:   '0x%x' '%.*s' ", data_hdr.id, sizeof(data_hdr.id), &data_hdr.id);
+      LOG_MUS("size: '0x%x' '%d' ", data_hdr.size, data_hdr.size);
 
       if (data_hdr.id != 0x61746164) { // "data " little-endian
-        LOG_SNI("ERROR: invalid id");
+        LOG_MUS("ERROR: invalid id");
         return;
       }
 
       if (data_hdr.size > stream.size()) {
-        LOG_SNI("stream.size:   '0x%x' '%d' ", stream.size(), stream.size());
-        LOG_SNI("data_hdr.size: '0x%x' '%d' ", data_hdr.size, data_hdr.size);
-        LOG_SNI("ERROR: broken data");
+        LOG_MUS("stream.size:   '0x%x' '%d' ", stream.size(), stream.size());
+        LOG_MUS("data_hdr.size: '0x%x' '%d' ", data_hdr.size, data_hdr.size);
+        LOG_MUS("ERROR: broken data");
         data_hdr.size = stream.size();
       }
 
       size_t frames_per_channel = data_hdr.size / fmt_hdr.block_align;
-      LOG_SNI("frames_per_channel %zd", frames_per_channel);
+      LOG_MUS("frames_per_channel %zd", frames_per_channel);
 
       for (size_t i = 0; i < frames_per_channel; ++i) {
         for (size_t j = 0; j < frames.size(); ++j) {
@@ -237,13 +236,13 @@ struct file_wav_t {
     }
 
     if (!stream.empty()) {
-      LOG_SNI("ERROR: stream is not empty '%zd' ", stream.size());
+      LOG_MUS("ERROR: stream is not empty '%zd' ", stream.size());
       stream.skip(stream.size());
     }
   }
 
   void write(const std::string& fname) {
-    LOGGER_SNI;
+    LOGGER_MUS;
 
     stream_t stream;
 
@@ -341,18 +340,18 @@ struct wav_editor_t {
   void add_pattern(pattern_sptr_t pattern) { _patterns.push_back(pattern); }
 
   void load(const std::string& fname) {
-    LOGGER_SNI;
+    LOGGER_MUS;
     file_wav_t wav;
     wav.read(fname);
     if (_sample_rate == wav.sample_rate) {
-      _channels.push_back(wav.frames[0]); // Только первый канал.
+      _channels.push_back(wav.frames[0]); // Нужен единственный канал.
     } else {
-      LOG_SNI("ERROR: invalid sample_rate");
+      LOG_MUS("ERROR: invalid sample_rate");
     }
   }
 
   void save(const std::string& fname) {
-    LOGGER_SNI;
+    LOGGER_MUS;
     file_wav_t wav;
     wav.sample_rate = _sample_rate;
     wav.frames.push_back(_result);
@@ -360,7 +359,7 @@ struct wav_editor_t {
   }
 
   void process(size_t seconds) {
-    LOGGER_SNI;
+    LOGGER_MUS;
     _pattern_states.resize(5);
     _result.resize(_sample_rate * seconds);
     for (size_t i = 0; i < _result.size(); ++i) {
@@ -373,7 +372,7 @@ struct wav_editor_t {
           continue;
         }
         double x = (state.x - (double) state.x1) / (state.x2 - state.x1);
-        state.y = uint32_t (_channels[state.ch_ind][state.x] * state.pattern->f(x));
+        state.y = _channels[state.ch_ind][state.x] * state.pattern->f(x);
         state.x++;
       }
 
@@ -385,7 +384,7 @@ struct wav_editor_t {
   }
 
   void update_state(pattern_state_t& state) {
-    LOGGER_SNI;
+    LOGGER_MUS;
     state.ch_ind = rand() % _channels.size();
     size_t pattern_ind = rand() % _patterns.size();
     state.pattern = _patterns[pattern_ind];
@@ -394,7 +393,7 @@ struct wav_editor_t {
     state.x2 = state.x1 + (rand() % 10) * _sample_rate;
     state.x = state.x1;
     if (state.x2 >= _channels[state.ch_ind].size()) {
-      LOG_SNI("ERROR: invalid state");
+      LOG_MUS("ERROR: invalid state");
       state.pattern = nullptr;
     }
   }

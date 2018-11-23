@@ -9,6 +9,8 @@
 #include <vector>
 #include <algorithm>
 #include <iomanip>
+#include <memory>
+#include <cmath>
 #include "logger.h"
 
 
@@ -109,7 +111,7 @@ struct stream_t {
 ////////////////////////////////////////////////////////////////////////////////
 
 // TODO
-// Размер блока должен быть четным.
+// Размер блока в wav должен быть четным.
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -300,24 +302,121 @@ struct file_wav_t {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int main(int argc, char* argv[]) {
+struct pattern_t {
+  virtual double f(double) = 0;
+};
 
-  if (argc != 3) {
-    std::cerr << "usage: <programm> <in.ext> <out.ext> " << std::endl;
-    return 1;
-  }
+struct pattern_const_t : pattern_t {
+  double _level;
+  pattern_const_t(double level = 1.0) : _level(level) { }
+  double f(double) override { return _level; }
+};
 
-  file_wav_t wav;
-  wav.read(argv[1]);
-  {
-    for (size_t i = 0; i < wav.frames[0].size(); ++i) {
-      // uint32_t& a = wav.channels[0].frames[i];
-      // uint32_t& b = wav.channels[1].frames[i];
-      // b = a;
-      // printf("%8x, %8x, %8x \n", i, a, b);
+struct pattern_sin_t : pattern_t {
+  double _k;
+  pattern_sin_t(double k = 1) : _k(k) { }
+  double f(double x) override { return std::sin(_k * std::acos(-1) * x); }
+};
+
+using pattern_sptr_t = std::shared_ptr<pattern_t>;
+
+////////////////////////////////////////////////////////////////////////////////
+
+struct wav_editor_t {
+  struct pattern_state_t {
+    uint32_t x1;
+    uint32_t x2;
+    uint32_t x;
+    uint32_t y;
+    size_t ch_ind;
+    pattern_sptr_t pattern;
+  };
+
+  std::vector<std::vector<uint32_t>> _channels;
+  std::vector<uint32_t>              _result;
+  std::vector<pattern_sptr_t>        _patterns;
+  std::vector<pattern_state_t>       _pattern_states;
+  uint32_t                           _sample_rate = 44100;
+
+  void add_pattern(pattern_sptr_t pattern) { _patterns.push_back(pattern); }
+
+  void load(const std::string& fname) {
+    LOGGER_SNI;
+    file_wav_t wav;
+    wav.read(fname);
+    if (_sample_rate == wav.sample_rate) {
+      _channels.push_back(wav.frames[0]); // Только первый канал.
+    } else {
+      LOG_SNI("ERROR: invalid sample_rate");
     }
   }
-  wav.write(argv[2]);
+
+  void save(const std::string& fname) {
+    LOGGER_SNI;
+    file_wav_t wav;
+    wav.sample_rate = _sample_rate;
+    wav.frames.push_back(_result);
+    wav.write(fname);
+  }
+
+  void process(size_t seconds) {
+    LOGGER_SNI;
+    _pattern_states.resize(5);
+    _result.resize(_sample_rate * seconds);
+    for (size_t i = 0; i < _result.size(); ++i) {
+      uint32_t frame = 0;
+
+      for (auto& state : _pattern_states) {
+        if (!state.pattern || state.x >= state.x2) {
+          update_state(state);
+          state.y = 0;
+          continue;
+        }
+        double x = (state.x - (double) state.x1) / (state.x2 - state.x1);
+        state.y = uint32_t (_channels[state.ch_ind][state.x] * state.pattern->f(x));
+        state.x++;
+      }
+
+      size_t ind = i % _pattern_states.size();
+      frame = _pattern_states[ind].y;
+
+      _result[i] = frame;
+    }
+  }
+
+  void update_state(pattern_state_t& state) {
+    LOGGER_SNI;
+    state.ch_ind = rand() % _channels.size();
+    size_t pattern_ind = rand() % _patterns.size();
+    state.pattern = _patterns[pattern_ind];
+
+    state.x1 = rand() % _channels[state.ch_ind].size();
+    state.x2 = state.x1 + (rand() % 10) * _sample_rate;
+    state.x = state.x1;
+    if (state.x2 >= _channels[state.ch_ind].size()) {
+      LOG_SNI("ERROR: invalid state");
+      state.pattern = nullptr;
+    }
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+int main(/*int argc, char* argv[]*/) {
+
+  std::srand(unsigned(std::time(0)));
+
+  wav_editor_t editor;
+  editor.add_pattern(std::make_shared<pattern_const_t>());
+  // editor.add_pattern(std::make_shared<pattern_const_t>(0.5));
+  editor.add_pattern(std::make_shared<pattern_const_t>(0.0));
+  // editor.add_pattern(std::make_shared<pattern_sin_t>());
+  editor.load("/mnt/code/cpp/music_spec/wav/AriseDrumAtmos.wav");
+  editor.load("/mnt/code/cpp/music_spec/wav/AriseBells.wav");
+  editor.load("/mnt/code/cpp/music_spec/wav/AriseBassPiano4.wav");
+  editor.load("/mnt/code/cpp/music_spec/wav/AriseBassDrum.wav");
+  editor.process(10 * 60);
+  editor.save("/mnt/code/cpp/music_spec/wav/out.wav");
 
   return 0;
 }

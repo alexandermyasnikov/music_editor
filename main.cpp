@@ -137,12 +137,8 @@ struct file_wav_t {
     uint32_t size;
   } __attribute__((packed));
 
-  struct channel_t {
-    uint32_t sample_rate;
-    std::vector<uint32_t> frames;
-  };
-
-  std::vector<channel_t> channels;
+  std::vector<std::vector<uint32_t>> frames;
+  uint32_t sample_rate;
 
   void read(const std::string& fname) {
     LOGGER_SNI;
@@ -196,10 +192,8 @@ struct file_wav_t {
         return;
       }
 
-      channels.resize(fmt_hdr.num_channels);
-      for (auto& channel : channels) {
-        channel.sample_rate = fmt_hdr.sample_rate;
-      }
+      frames.resize(fmt_hdr.num_channels);
+      sample_rate = fmt_hdr.sample_rate;
     }
 
     {
@@ -224,7 +218,7 @@ struct file_wav_t {
       LOG_SNI("frames_per_channel %zd", frames_per_channel);
 
       for (size_t i = 0; i < frames_per_channel; ++i) {
-        for (auto& channel : channels) {
+        for (size_t j = 0; j < frames.size(); ++j) {
           uint8_t tmp = 0;
           uint32_t frame = 0;
           for (size_t k = 0; k < fmt_hdr.bits_per_sample / 8; ++k) {
@@ -234,7 +228,7 @@ struct file_wav_t {
           for (size_t k = fmt_hdr.bits_per_sample / 8; k < 32 / 8; ++k) {
             frame |= tmp << 8 * k;
           }
-          channel.frames.push_back(frame);
+          frames[j].push_back(frame);
         }
       }
 
@@ -257,15 +251,15 @@ struct file_wav_t {
 
     data_hdr_t data_hdr = {
       .id = 0x61746164,
-      .size = uint32_t(channels.size() * bits_per_sample / 8 * channels[0].frames.size()),
+      .size = uint32_t(frames.size() * bits_per_sample / 8 * frames[0].size()),
     };
 
     fmt_hdr_t fmt_hdr = {
       .id = 0x20746d66,
       .size = 16,
       .audio_format = 1,
-      .num_channels = (uint16_t) channels.size(),
-      .sample_rate = channels[0].sample_rate,
+      .num_channels = (uint16_t) frames.size(),
+      .sample_rate = sample_rate,
       .byte_rate = fmt_hdr.sample_rate * fmt_hdr.num_channels * bits_per_sample / 8,
       .block_align = uint16_t(fmt_hdr.num_channels * bits_per_sample / 8),
       .bits_per_sample = bits_per_sample,
@@ -286,10 +280,11 @@ struct file_wav_t {
     stream.write(data_hdr);
 
     {
-      for (size_t i = 0; i < channels[0].frames.size(); ++i) {
-        for (auto& channel : channels) {
+      size_t frames_size = frames[0].size(); // XXX
+      for (size_t i = 0; i < frames_size; ++i) {
+        for (size_t j = 0; j < frames.size(); ++j) {
           uint8_t tmp = 0;
-          uint32_t frame = channel.frames[i];
+          uint32_t frame = frames[j][i];
           for (size_t k = 0; k < fmt_hdr.bits_per_sample / 8; ++k) {
             tmp = (frame >> 8 * k) & 0xFF;
             stream.write(tmp);
@@ -315,8 +310,7 @@ int main(int argc, char* argv[]) {
   file_wav_t wav;
   wav.read(argv[1]);
   {
-    // auto& v = wav.channels[0];
-    for (size_t i = 0; i < wav.channels.size(); ++i) {
+    for (size_t i = 0; i < wav.frames[0].size(); ++i) {
       // uint32_t& a = wav.channels[0].frames[i];
       // uint32_t& b = wav.channels[1].frames[i];
       // b = a;

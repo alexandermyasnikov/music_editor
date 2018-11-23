@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <memory>
 #include <cmath>
+#include <filesystem>
 #include "logger.h"
 
 
@@ -408,14 +409,23 @@ int main(/*int argc, char* argv[]*/) {
   wav_editor_t editor;
   editor.add_pattern(std::make_shared<pattern_const_t>());
   // editor.add_pattern(std::make_shared<pattern_const_t>(0.5));
-  editor.add_pattern(std::make_shared<pattern_const_t>(0.0));
+  // editor.add_pattern(std::make_shared<pattern_const_t>(0.0));
   // editor.add_pattern(std::make_shared<pattern_sin_t>());
-  editor.load("/mnt/code/cpp/music_spec/wav/AriseDrumAtmos.wav");
-  editor.load("/mnt/code/cpp/music_spec/wav/AriseBells.wav");
-  editor.load("/mnt/code/cpp/music_spec/wav/AriseBassPiano4.wav");
-  editor.load("/mnt/code/cpp/music_spec/wav/AriseBassDrum.wav");
-  editor.process(10 * 60);
+
+  {
+    std::string path = "/home/alexander/Music/musicLink/LGND.Media.Empires.The.Worship.(SCENE)-DISCOVER/Kit_01_Arise_(165BPM)/_(WAVs)_Loops";
+    for (auto& p : std::filesystem::directory_iterator(path))
+      editor.load(p.path());
+  }
+  {
+    std::string path = "/home/alexander/Music/musicLink/LBandyMusicNigeria Afrobeat/Loops - Nigeria Afrobeat/Melody Loops - Nigeria Afrobeat/WAV";
+    for (auto& p : std::filesystem::directory_iterator(path))
+      editor.load(p.path());
+  }
+
+  editor.process(1 * 60 * 60);
   editor.save("/mnt/code/cpp/music_spec/wav/out.wav");
+
 
   return 0;
 }

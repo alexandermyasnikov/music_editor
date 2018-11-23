@@ -373,7 +373,7 @@ struct wav_editor_t {
           continue;
         }
         double x = (state.x - (double) state.x1) / (state.x2 - state.x1);
-        state.y = _channels[state.ch_ind][state.x] * state.pattern->f(x);
+        state.y = int32_t(_channels[state.ch_ind][state.x]) * state.pattern->f(x);
         state.x++;
       }
 
@@ -407,10 +407,10 @@ int main(/*int argc, char* argv[]*/) {
   std::srand(unsigned(std::time(0)));
 
   wav_editor_t editor;
-  editor.add_pattern(std::make_shared<pattern_const_t>());
-  // editor.add_pattern(std::make_shared<pattern_const_t>(0.5));
-  // editor.add_pattern(std::make_shared<pattern_const_t>(0.0));
-  // editor.add_pattern(std::make_shared<pattern_sin_t>());
+  editor.add_pattern(std::make_shared<pattern_const_t>(0.0));
+  editor.add_pattern(std::make_shared<pattern_const_t>(0.5));
+  editor.add_pattern(std::make_shared<pattern_const_t>(1.0));
+  editor.add_pattern(std::make_shared<pattern_sin_t>());
 
   {
     std::string path = "/home/alexander/Music/musicLink/LGND.Media.Empires.The.Worship.(SCENE)-DISCOVER/Kit_01_Arise_(165BPM)/_(WAVs)_Loops";
@@ -423,7 +423,7 @@ int main(/*int argc, char* argv[]*/) {
       editor.load(p.path());
   }
 
-  editor.process(1 * 60 * 60);
+  editor.process(10 * 60);
   editor.save("/mnt/code/cpp/music_spec/wav/out.wav");
 
 
